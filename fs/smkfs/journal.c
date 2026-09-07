@@ -182,7 +182,6 @@ SMKFS_STATUS journal_log_free(_SMKFS_MOUNT *mnt, SMKFS_BLOCK block,
 static SMKFS_STATUS journal_persist_superblock(_SMKFS_MOUNT *mnt) {
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
   SMKFS_STATUS ret;
@@ -354,7 +353,6 @@ static SMKFS_STATUS journal_redo_entry(_SMKFS_MOUNT *mnt,
 SMKFS_STATUS journal_replay(_SMKFS_MOUNT *mnt) {
   PUCHAR buf = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!buf) {
-    free(buf);
     return SMKFS_ERR_NOMEM;
   }
   ULONGLONG pos;

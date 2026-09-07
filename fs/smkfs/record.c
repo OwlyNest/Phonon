@@ -228,7 +228,6 @@ SMKFS_RECORD_ID record_alloc(_SMKFS_MOUNT *mnt, SMKFS_OBJECT_TYPE object_type) {
 VOID record_free(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id) {
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return;
   }
   _SMKFS_RECORD *rec;

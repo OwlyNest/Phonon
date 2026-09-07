@@ -38,7 +38,6 @@
 SMKFS_STATUS smkfs_mount(UCHAR drive, _SMKFS_MOUNT *mnt) {
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
 
@@ -143,7 +142,6 @@ SMKFS_STATUS smkfs_unmount(_SMKFS_MOUNT *mnt) {
   {
     PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
     if (!block) {
-      free(block);
       return SMKFS_ERR_NOMEM;
     }
 
@@ -190,7 +188,6 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
                         ULONGLONG sector_size) {
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
   _SMKFS_MOUNT *mnt = malloc(sizeof(_SMKFS_MOUNT));
@@ -448,7 +445,6 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
 SMKFS_STATUS smkfs_fsck(UCHAR drive) {
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
   _SMKFS_SUPERBLOCK check_sb;

@@ -48,7 +48,6 @@ static LONG block_read_byte(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
   _SMKFS_EXTENT ext;
   UCHAR *block = (UCHAR *)malloc(sizeof(UCHAR) * SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
 

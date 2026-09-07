@@ -50,10 +50,10 @@ mb2_tag_end:
 mb2_header_end:
 
 .section .boot.bss, "aw", @nobits
+
 .align 16
 stack_bottom:
-    #.skip 16384         # 16 KB stack
-    .skip 65536         # 64 KB stack
+    .skip 16 * 1024         # 16 KB stack
 stack_top:
 
 .section .boot.bss

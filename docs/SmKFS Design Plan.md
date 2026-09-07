@@ -1831,9 +1831,9 @@ Adding a new attribute to SmKFS now requires only a single row in this table. No
 - [x] Wrap all multi-step operations in transactions.
 
 ### Phase 5: Hardening (Weeks 9–10)
-- [ ] Heap-allocate all large (4KB) block buffers, switch back to 16 KB kernel stack.
+- [x] Heap-allocate all large (4KB) block buffers, switch back to 16 KB kernel stack.
 - [ ] Chain merge extents.
-- [ ] Write MAT to disk and use that for attribute implementation.
+- [ ] Write MAT to disk and use that for attribute implementation. (essentially $AttrDef)
 - [ ] Implement comprehensive fsck v2.
 - [ ] Implement standardized error codes and audit all failure paths.
 - [ ] Add UUID, volume name, mount count to superblock (replace drive letter from drive number to drive letter by volume name).

@@ -119,7 +119,6 @@ SMKFS_STATUS smkfs_dump_superblock(_SMKFS_MOUNT *mnt) {
 SMKFS_STATUS smkfs_dump_record(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id) {
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
   _SMKFS_RECORD *rec;
@@ -189,7 +188,6 @@ SMKFS_STATUS smkfs_dump_record(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id) {
 SMKFS_STATUS smkfs_dump_journal(_SMKFS_MOUNT *mnt) {
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
   _SMKFS_JOURNAL_ENTRY *ent;

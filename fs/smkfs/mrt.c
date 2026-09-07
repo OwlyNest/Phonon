@@ -50,7 +50,6 @@ SMKFS_STATUS mrt_format(_SMKFS_MOUNT *mnt, SMKFS_BLOCK start_block,
 
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
   ULONG entries_per_block = SMKFS_BLOCK_SIZE / sizeof(_SMKFS_MRT_ENTRY);
@@ -96,7 +95,6 @@ SMKFS_STATUS mrt_alloc_entry(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID *out_record_id,
 
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
 
@@ -162,7 +160,6 @@ SMKFS_STATUS mrt_update_entry(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
                               SMKFS_MRT_FLAGS flags) {
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
 
@@ -216,7 +213,6 @@ SMKFS_STATUS mrt_free_entry(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id) {
 
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
 
@@ -279,7 +275,6 @@ SMKFS_STATUS mrt_resolve(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
 
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
 

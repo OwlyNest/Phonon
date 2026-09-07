@@ -97,7 +97,7 @@ pdt:
 
 .align 16
 stack_bottom:
-    .skip 65536
+    .skip 16 * 1024         # 16 KB stack
 stack_top:
 
 

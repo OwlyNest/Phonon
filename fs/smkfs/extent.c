@@ -119,7 +119,6 @@ SMKFS_STATUS extent_add(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
                         ULONG count) {
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return SMKFS_ERR_NOMEM;
   }
 
@@ -208,7 +207,6 @@ static LONG extent_remove_cb(SMKFS_ATTR_ID attr_id, PVOID data, SIZE_T len,
 VOID extent_remove_all(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id) {
   PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block) {
-    free(block);
     return;
   }
   _SMKFS_RECORD *rec = (_SMKFS_RECORD *)block;
