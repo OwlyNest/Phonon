@@ -212,7 +212,7 @@ gdt_install:
     push rax
 
     cli
-    lretq
+    rex.w retf
 
 flush_cs:
     ret

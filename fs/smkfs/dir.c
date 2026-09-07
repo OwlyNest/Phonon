@@ -275,9 +275,7 @@ SMKFS_STATUS smkfs_delete_record(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID parent_dir,
     if (record_find_attr(attr_buf, SMKFS_ATTRT_DATA, (PVOID *)&dir_btree,
                          NULL) == SMKFS_OK) {
       _SMKFS_BTREE_NODE node;
-      _SMKFS_BTREE_LEAF_ENTRY entries[64];
-      if (btree_node_read(mnt, *dir_btree, &node, entries, sizeof(entries)) ==
-          SMKFS_OK) {
+      if (btree_node_read(mnt, *dir_btree, &node, NULL, 0) == SMKFS_OK) {
         if (node.key_count > 0) {
           free(attr_buf);
           free(parent_attr);
@@ -419,20 +417,24 @@ SMKFS_STATUS smkfs_rename(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID old_parent,
           (PUCHAR)malloc(SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD));
       SMKFS_RECORD_ID *parent_ptr;
 
+      if (!walk_attr)
+        break;
+
       if (record_read(mnt, walk, &walk_rec, walk_attr, buf_size) != SMKFS_OK) {
         free(walk_attr);
         break;
       }
 
       if (record_find_attr(walk_attr, SMKFS_ATTRT_PARENT, (PVOID *)&parent_ptr,
-                           NULL)) {
+                           NULL) != SMKFS_OK) {
         free(walk_attr);
         break;
       }
 
       walk = *parent_ptr;
+      free(walk_attr); /* always free before next iteration */
+
       if (walk == record_id) {
-        free(walk_attr);
         free(rec_attr_buf);
         free(old_parent_attr);
         free(new_parent_attr);
@@ -584,8 +586,9 @@ SMKFS_STATUS smkfs_rename(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID old_parent,
 
 static LONG readdir_cb(PCCHAR key, ULONGLONG value, PVOID ctx) {
   _SMKFS_READDIR_CTX *c = (_SMKFS_READDIR_CTX *)ctx;
-  if (c->count >= c->max)
+  if (c->count >= c->max) {
     return 1;
+  }
   strncpy(c->entries[c->count].name, key, SMKFS_NAME_LEN - 1);
   c->entries[c->count].name[SMKFS_NAME_LEN - 1] = '\0';
   c->entries[c->count].record_id = value;
@@ -608,25 +611,31 @@ SMKFS_STATUS smkfs_readdir(_SMKFS_MOUNT *mnt, SMKFS_PATH path,
   _SMKFS_READDIR_CTX ctx;
 
   if (!mnt->mounted || !path || !entries || !out_count) {
+    free(attr_buf);
     return SMKFS_ERR_INVAL;
   }
 
   if (path_validate(path) != SMKFS_OK) {
+    free(attr_buf);
     return SMKFS_ERR_INVAL;
   }
 
   if (path_lookup(mnt, path, &dir_record) != SMKFS_OK) {
+    free(attr_buf);
     return SMKFS_ERR_NOTFOUND;
   }
   if (record_read(mnt, dir_record, &rec, attr_buf, buf_size) != SMKFS_OK) {
+    free(attr_buf);
     return SMKFS_ERR_IO;
   }
 
   if (rec.object_type != SMKFS_ROT_DIR) {
+    free(attr_buf);
     return SMKFS_ERR_INVAL;
   }
   if (record_find_attr(attr_buf, SMKFS_ATTRT_DATA, (PVOID *)&btree_root,
                        NULL) != SMKFS_OK) {
+    free(attr_buf);
     return SMKFS_ERR_NOTFOUND;
   }
 
@@ -637,5 +646,6 @@ SMKFS_STATUS smkfs_readdir(_SMKFS_MOUNT *mnt, SMKFS_PATH path,
   btree_iterate(mnt, *btree_root, readdir_cb, &ctx);
 
   *out_count = ctx.count;
+  free(attr_buf);
   return SMKFS_OK;
 }

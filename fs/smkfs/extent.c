@@ -54,13 +54,19 @@ static LONG extent_resolve_cb(SMKFS_ATTR_ID attr_id, PVOID data, SIZE_T len,
 
 SMKFS_STATUS extent_resolve(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
                             SMKFS_LBLOCK logical_block, _SMKFS_EXTENT *out) {
-  UCHAR attr_buf[SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD)];
+  SIZE_T buf_size = SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD);
+  PUCHAR attr_buf = (PUCHAR)malloc(buf_size);
+  if (!attr_buf) {
+    free(attr_buf);
+    return SMKFS_ERR_NOMEM;
+  }
   _SMKFS_RECORD rec;
   SMKFS_STATUS status;
   _SMKFS_ATTR_CTX ctx;
 
-  status = record_read(mnt, record_id, &rec, attr_buf, sizeof(attr_buf));
+  status = record_read(mnt, record_id, &rec, attr_buf, buf_size);
   if (status != SMKFS_OK) {
+    free(attr_buf);
     return status;
   }
 
@@ -70,6 +76,7 @@ SMKFS_STATUS extent_resolve(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
 
   record_iterate_attr(attr_buf, SMKFS_ATTRT_EXTENTS, extent_resolve_cb, &ctx);
 
+  free(attr_buf);
   return ctx.found ? SMKFS_OK : SMKFS_ERR_NOTFOUND;
 }
 
@@ -110,17 +117,25 @@ static LONG extent_merge_cb(SMKFS_ATTR_ID attr_id, PVOID data, SIZE_T len,
 SMKFS_STATUS extent_add(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
                         SMKFS_LBLOCK logical_block, SMKFS_BLOCK physical_block,
                         ULONG count) {
-  UCHAR block[SMKFS_BLOCK_SIZE];
+  PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
+  if (!block) {
+    free(block);
+    return SMKFS_ERR_NOMEM;
+  }
+
   _SMKFS_RECORD *rec = (_SMKFS_RECORD *)block;
 
   SMKFS_BLOCK phys_block;
   SMKFS_STATUS mrt_ret = mrt_resolve(mnt, record_id, &phys_block, NULL, NULL);
   if (mrt_ret != SMKFS_OK) {
+    free(block);
     return mrt_ret;
   }
 
-  if (read_block(mnt, phys_block, block) != SMKFS_OK)
+  if (read_block(mnt, phys_block, block) != SMKFS_OK) {
+    free(block);
     return SMKFS_ERR_IO;
+  }
 
   PUCHAR attr_buf = block + sizeof(_SMKFS_RECORD);
   SIZE_T attr_space = SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD);
@@ -137,6 +152,7 @@ SMKFS_STATUS extent_add(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
     record_remove_attr_id(attr_buf, SMKFS_ATTRT_EXTENTS, ctx.matched_id);
     if (record_add_attr(attr_buf, attr_space, SMKFS_ATTRT_EXTENTS, &ctx.merged,
                         sizeof(ctx.merged)) != SMKFS_OK) {
+      free(block);
       return SMKFS_ERR_NOSPC;
     }
   } else {
@@ -146,6 +162,7 @@ SMKFS_STATUS extent_add(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
     new_ext.block_count = count;
     if (record_add_attr(attr_buf, attr_space, SMKFS_ATTRT_EXTENTS, &new_ext,
                         sizeof(new_ext)) != SMKFS_OK) {
+      free(block);
       return SMKFS_ERR_NOSPC;
     }
   }
@@ -162,7 +179,9 @@ SMKFS_STATUS extent_add(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
   }
   rec->attr_count--;
 
-  return record_write(mnt, record_id, rec, attr_buf);
+  SMKFS_STATUS ret = record_write(mnt, record_id, rec, attr_buf);
+  free(block);
+  return ret;
 }
 
 static LONG extent_remove_cb(SMKFS_ATTR_ID attr_id, PVOID data, SIZE_T len,
@@ -186,21 +205,27 @@ static LONG extent_remove_cb(SMKFS_ATTR_ID attr_id, PVOID data, SIZE_T len,
   return 0;
 }
 
-void extent_remove_all(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id) {
-  UCHAR block[SMKFS_BLOCK_SIZE];
+VOID extent_remove_all(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id) {
+  PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
+  if (!block) {
+    free(block);
+    return;
+  }
   _SMKFS_RECORD *rec = (_SMKFS_RECORD *)block;
   PUCHAR attr_buf;
-  _SMKFS_EXTENT extents[32];
+  _SMKFS_EXTENT extents[32]; /* 32 * 20 = 640 bytes. Iffy, passes for now. */
   _SMKFS_EXT_REMOVE_CTX ctx;
   SMKFS_BLOCK phys_block;
   SMKFS_STATUS mrt_ret;
 
   mrt_ret = mrt_resolve(mnt, record_id, &phys_block, NULL, NULL);
   if (mrt_ret != SMKFS_OK) {
+    free(block);
     return;
   }
 
   if (read_block(mnt, phys_block, block) != SMKFS_OK) {
+    free(block);
     return;
   }
 
@@ -234,4 +259,5 @@ void extent_remove_all(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id) {
 
   /* Journalled write of the cleaned record */
   record_write(mnt, record_id, rec, attr_buf);
+  free(block);
 }

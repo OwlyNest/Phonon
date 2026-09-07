@@ -148,7 +148,7 @@ VOID header_checksum_update(_SMKFS_HEADER *h, PCVOID data, SIZE_T len) {
 SMKFS_STATUS header_checksum_verify(const _SMKFS_HEADER *h, PCVOID data,
                                     SIZE_T len) {
   ULONG saved = h->checksum;
-  PUCHAR tmp_buf = (PUCHAR)kmalloc(SMKFS_BLOCK_SIZE);
+  PUCHAR tmp_buf = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!tmp_buf) {
     free(tmp_buf);
     return SMKFS_ERR_NOMEM;
