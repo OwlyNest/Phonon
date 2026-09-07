@@ -23,6 +23,7 @@
 /* --- Includes ---*/
 #include <fs/smkfs.h>
 #include <fs/smkfs_internal.h>
+#include <mm/heap.h>
 
 /* --- Typedefs - Structs - Enums ---*/
 
@@ -44,26 +45,33 @@ SMKFS_STATUS smkfs_getattr(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
 
 SMKFS_STATUS smkfs_setattr(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
                            SMKFS_ATTR_TYPE attr_type, PCVOID data, SIZE_T len) {
-  UCHAR attr_buf[SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD)];
+  SIZE_T buf_size = SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD);
+  PUCHAR attr_buf = (PUCHAR)malloc(buf_size);
+  if (!attr_buf) {
+    free(attr_buf);
+    return SMKFS_ERR_NOMEM;
+  }
   _SMKFS_RECORD rec;
   SMKFS_STATUS ret;
 
   if (!mnt->mounted || !data || record_id == 0) {
+    free(attr_buf);
     return SMKFS_ERR_INVAL;
   }
 
-  if (record_read(mnt, record_id, &rec, attr_buf, sizeof(attr_buf)) !=
-      SMKFS_OK) {
+  if (record_read(mnt, record_id, &rec, attr_buf, buf_size) != SMKFS_OK) {
+    free(attr_buf);
     return SMKFS_ERR_IO;
   }
 
   if (journal_start_transaction(mnt) != SMKFS_OK) {
+    free(attr_buf);
     return SMKFS_ERR_JOURNAL;
   }
 
-  if (record_add_attr(attr_buf, sizeof(attr_buf), attr_type, data, len) !=
-      SMKFS_OK) {
+  if (record_add_attr(attr_buf, buf_size, attr_type, data, len) != SMKFS_OK) {
     journal_abort(mnt);
+    free(attr_buf);
     return SMKFS_ERR_NOSPC;
   }
 
@@ -88,13 +96,15 @@ SMKFS_STATUS smkfs_setattr(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
   ret = record_write(mnt, record_id, &rec, attr_buf);
   if (ret != SMKFS_OK) {
     journal_abort(mnt);
+    free(attr_buf);
     return ret;
   }
 
   if (journal_commit(mnt) != SMKFS_OK) {
+    free(attr_buf);
     return SMKFS_ERR_JOURNAL;
   }
-
+  free(attr_buf);
   return SMKFS_OK;
 }
 

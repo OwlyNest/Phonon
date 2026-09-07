@@ -62,14 +62,21 @@ SMKFS_STATUS path_lookup(_SMKFS_MOUNT *mnt, SMKFS_PATH path,
   p = path + 3;
 
   while (*p) {
-    while (*p == '/')
+    while (*p == '/') {
       p++;
-    if (!*p)
+    }
+    if (!*p) {
       break;
+    }
 
     i = 0;
     while (*p && *p != '/' && i < SMKFS_NAME_LEN - 1) {
       name[i++] = *p++;
+    }
+
+    /* Component longer than SMKFS_NAME_LEN - 1: do not truncate */
+    if (*p && *p != '/') {
+      return SMKFS_ERR_TOO_BIG;
     }
 
     name[i] = '\0';

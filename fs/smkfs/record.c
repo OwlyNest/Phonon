@@ -43,8 +43,9 @@ SMKFS_STATUS record_read(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id,
   SMKFS_STATUS mrt_ret;
   SMKFS_GENERATION generation;
 
-  if (!rec || !attr_buf)
+  if (!rec || !attr_buf) {
     return SMKFS_ERR_INVAL;
+  }
 
   block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!block)
@@ -225,12 +226,17 @@ SMKFS_RECORD_ID record_alloc(_SMKFS_MOUNT *mnt, SMKFS_OBJECT_TYPE object_type) {
 }
 
 VOID record_free(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id) {
-  UCHAR block[SMKFS_BLOCK_SIZE];
+  PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
+  if (!block) {
+    free(block);
+    return;
+  }
   _SMKFS_RECORD *rec;
   SMKFS_BLOCK phys_block;
   PUCHAR attr_buf;
 
   if (mrt_resolve(mnt, record_id, &phys_block, NULL, NULL) != SMKFS_OK) {
+    free(block);
     return;
   }
 

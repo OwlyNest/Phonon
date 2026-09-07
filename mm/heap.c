@@ -220,10 +220,13 @@ VOID free(PVOID ptr) {
   Block *next;
   Block *prev;
 
-  if (!ptr)
+  if (!ptr) {
     return;
-  if ((VIRT_ADDR_T)ptr & 0xF)
+  }
+
+  if ((VIRT_ADDR_T)ptr & 0xF) {
     return;
+  }
 
   flags = spinlock_acquire(&heap_lock);
 
@@ -281,8 +284,10 @@ PVOID realloc(PVOID ptr, SIZE_T new_size) {
   SIZE_T old_size;
   PVOID new_ptr;
 
-  if (!ptr)
+  if (!ptr) {
     return malloc(new_size);
+  }
+
   if (new_size == 0) {
     free(ptr);
     return NULL;

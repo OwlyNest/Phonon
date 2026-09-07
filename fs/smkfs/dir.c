@@ -21,6 +21,7 @@
 /* --- Macros ---*/
 
 /* --- Includes ---*/
+#include "internal/phonon_types.h"
 #include <fs/smkfs.h>
 #include <fs/smkfs_internal.h>
 #include <lib/string.h>
@@ -38,25 +39,39 @@
 SMKFS_STATUS smkfs_lookup_by_name(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID dir_record,
                                   SMKFS_NAME name,
                                   SMKFS_RECORD_ID *out_record) {
-  UCHAR attr_buf[SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD)];
+  PUCHAR attr_buf;
   _SMKFS_RECORD rec;
   SMKFS_BLOCK *root_block;
+  SMKFS_STATUS status;
+  SIZE_T attr_sz = SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD);
 
-  if (!mnt->mounted || !name || !out_record)
+  if (!mnt->mounted || !name || !out_record) {
     return SMKFS_ERR_INVAL;
-  if (record_read(mnt, dir_record, &rec, attr_buf, sizeof(attr_buf)) !=
-      SMKFS_OK) {
+  }
+  attr_buf = (PUCHAR)malloc(attr_sz);
+  if (!attr_buf) {
+    return SMKFS_ERR_NOMEM;
+  }
+
+  if (record_read(mnt, dir_record, &rec, attr_buf, attr_sz) != SMKFS_OK) {
+    free(attr_buf);
     return SMKFS_ERR_IO;
   }
 
-  if (rec.object_type != SMKFS_ROT_DIR)
+  if (rec.object_type != SMKFS_ROT_DIR) {
+    free(attr_buf);
     return SMKFS_ERR_INVAL;
+  }
+
   if (record_find_attr(attr_buf, SMKFS_ATTRT_DATA, (PVOID *)&root_block,
                        NULL) != SMKFS_OK) {
+    free(attr_buf);
     return SMKFS_ERR_NOTFOUND;
   }
 
-  return btree_search(mnt, *root_block, name, out_record);
+  status = btree_search(mnt, *root_block, name, out_record);
+  free(attr_buf);
+  return status;
 }
 
 SMKFS_STATUS smkfs_create_record(_SMKFS_MOUNT *mnt,
@@ -229,24 +244,32 @@ cleanup:
 
 SMKFS_STATUS smkfs_delete_record(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID parent_dir,
                                  SMKFS_NAME name, SMKFS_RECORD_ID record_id) {
-  UCHAR attr_buf[SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD)];
-  UCHAR parent_attr[SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD)];
+  PUCHAR attr_buf = NULL;
+  PUCHAR parent_attr = NULL;
   _SMKFS_RECORD rec;
   _SMKFS_RECORD parent_rec;
   SMKFS_BLOCK *parent_btree;
   SMKFS_BLOCK new_root;
+  SIZE_T attr_sz = SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD);
 
   if (!mnt->mounted || record_id == 0 || !name) {
     return SMKFS_ERR_INVAL;
   }
 
-  /* 1. Read the target record (outside the transaction – pure read) */
-  if (record_read(mnt, record_id, &rec, attr_buf, sizeof(attr_buf)) !=
-      SMKFS_OK) {
+  attr_buf = (PUCHAR)malloc(attr_sz);
+  parent_attr = (PUCHAR)malloc(attr_sz);
+  if (!attr_buf || !parent_attr) {
+    free(attr_buf);
+    free(parent_attr);
+    return SMKFS_ERR_NOMEM;
+  }
+
+  if (record_read(mnt, record_id, &rec, attr_buf, attr_sz) != SMKFS_OK) {
+    free(attr_buf);
+    free(parent_attr);
     return SMKFS_ERR_IO;
   }
 
-  /* 2. Directory check: cannot unlink a non-empty directory */
   if (rec.object_type == SMKFS_ROT_DIR) {
     SMKFS_BLOCK *dir_btree;
     if (record_find_attr(attr_buf, SMKFS_ATTRT_DATA, (PVOID *)&dir_btree,
@@ -256,6 +279,8 @@ SMKFS_STATUS smkfs_delete_record(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID parent_dir,
       if (btree_node_read(mnt, *dir_btree, &node, entries, sizeof(entries)) ==
           SMKFS_OK) {
         if (node.key_count > 0) {
+          free(attr_buf);
+          free(parent_attr);
           return SMKFS_ERR_NOTEMPTY;
         }
       }
@@ -263,19 +288,24 @@ SMKFS_STATUS smkfs_delete_record(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID parent_dir,
   }
 
   if (journal_start_transaction(mnt) != SMKFS_OK) {
+    free(attr_buf);
+    free(parent_attr);
     return SMKFS_ERR_JOURNAL;
   }
 
-  /* 3. Remove the directory entry from the parent */
-  if (record_read(mnt, parent_dir, &parent_rec, parent_attr,
-                  sizeof(parent_attr)) != SMKFS_OK) {
+  if (record_read(mnt, parent_dir, &parent_rec, parent_attr, attr_sz) !=
+      SMKFS_OK) {
     journal_abort(mnt);
+    free(attr_buf);
+    free(parent_attr);
     return SMKFS_ERR_IO;
   }
 
   if (record_find_attr(parent_attr, SMKFS_ATTRT_DATA, (PVOID *)&parent_btree,
                        NULL) != SMKFS_OK) {
     journal_abort(mnt);
+    free(attr_buf);
+    free(parent_attr);
     return SMKFS_ERR_NOTFOUND;
   }
 
@@ -284,13 +314,17 @@ SMKFS_STATUS smkfs_delete_record(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID parent_dir,
     SMKFS_STATUS del_ret = btree_delete(mnt, *parent_btree, name, &new_root);
     if (del_ret != SMKFS_OK) {
       journal_abort(mnt);
+      free(attr_buf);
+      free(parent_attr);
       return del_ret;
     }
   }
 
-  if (record_add_attr(parent_attr, sizeof(parent_attr), SMKFS_ATTRT_DATA,
-                      &new_root, sizeof(new_root)) != SMKFS_OK) {
+  if (record_add_attr(parent_attr, attr_sz, SMKFS_ATTRT_DATA, &new_root,
+                      sizeof(new_root)) != SMKFS_OK) {
     journal_abort(mnt);
+    free(attr_buf);
+    free(parent_attr);
     return SMKFS_ERR_NOSPC;
   }
 
@@ -298,25 +332,29 @@ SMKFS_STATUS smkfs_delete_record(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID parent_dir,
       sizeof(_SMKFS_RECORD) + attr_buf_total_len(parent_attr);
   if (record_write(mnt, parent_dir, &parent_rec, parent_attr) != SMKFS_OK) {
     journal_abort(mnt);
+    free(attr_buf);
+    free(parent_attr);
     return SMKFS_ERR_IO;
   }
 
-  /* 4. Decrement link_count */
   if (rec.link_count == 0) {
-    rec.link_count = 1; /* defensive */
+    rec.link_count = 1;
   }
   rec.link_count--;
 
-  /* 5. Free or write back */
   if (rec.link_count == 0) {
-    /* extent_remove_all + bitmap/MRT cleanup now run under this tx */
     record_free(mnt, record_id);
   } else {
     if (record_write(mnt, record_id, &rec, attr_buf) != SMKFS_OK) {
       journal_abort(mnt);
+      free(attr_buf);
+      free(parent_attr);
       return SMKFS_ERR_IO;
     }
   }
+
+  free(attr_buf);
+  free(parent_attr);
 
   if (journal_commit(mnt) != SMKFS_OK) {
     return SMKFS_ERR_JOURNAL;
@@ -328,38 +366,105 @@ SMKFS_STATUS smkfs_delete_record(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID parent_dir,
 SMKFS_STATUS smkfs_rename(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID old_parent,
                           SMKFS_NAME old_name, SMKFS_RECORD_ID new_parent,
                           SMKFS_NAME new_name, SMKFS_RECORD_ID record_id) {
-  UCHAR rec_attr_buf[SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD)];
-  UCHAR old_parent_attr[SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD)];
-  UCHAR new_parent_attr[SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD)];
+  SIZE_T buf_size = SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD);
+  PUCHAR rec_attr_buf = (PUCHAR)malloc(buf_size);
+  PUCHAR old_parent_attr = (PUCHAR)malloc(buf_size);
+  PUCHAR new_parent_attr = (PUCHAR)malloc(buf_size);
+  if (!rec_attr_buf || !old_parent_attr || !new_parent_attr) {
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
+    return SMKFS_ERR_NOMEM;
+  }
   _SMKFS_RECORD rec, old_parent_rec, new_parent_rec;
   SMKFS_BLOCK *old_btree_ptr;
   SMKFS_BLOCK *new_btree_ptr;
   SMKFS_BLOCK new_root;
 
   if (!mnt->mounted || !old_name || !new_name || record_id == 0) {
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_INVAL;
   }
 
   /* Pure reads – keep them outside the transaction */
-  if (record_read(mnt, record_id, &rec, rec_attr_buf, sizeof(rec_attr_buf)) !=
-      SMKFS_OK) {
+  if (record_read(mnt, record_id, &rec, rec_attr_buf, buf_size) != SMKFS_OK) {
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_IO;
   }
 
+  /*
+   * Cycle check: Renaming a directory under one of it's own descendants
+   * would make the tree unreachable and leave rmdir permanently stuck.
+   * Walk the PARENT chain from new_parent; if we meet record_id, reject.
+   * Only directories can form cycles (hard links to dirs are forbidden).
+   */
+  if (rec.object_type == SMKFS_ROT_DIR) {
+    SMKFS_RECORD_ID walk = new_parent;
+    _SMKFS_RECORD walk_rec;
+    ULONG depth = 0;
+
+    if (walk == record_id) {
+      free(rec_attr_buf);
+      free(old_parent_attr);
+      free(new_parent_attr);
+      return SMKFS_ERR_INVAL;
+    }
+
+    while (walk != 0 && walk != mnt->sb.root_record_id && depth < 256) {
+      PUCHAR walk_attr =
+          (PUCHAR)malloc(SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD));
+      SMKFS_RECORD_ID *parent_ptr;
+
+      if (record_read(mnt, walk, &walk_rec, walk_attr, buf_size) != SMKFS_OK) {
+        free(walk_attr);
+        break;
+      }
+
+      if (record_find_attr(walk_attr, SMKFS_ATTRT_PARENT, (PVOID *)&parent_ptr,
+                           NULL)) {
+        free(walk_attr);
+        break;
+      }
+
+      walk = *parent_ptr;
+      if (walk == record_id) {
+        free(walk_attr);
+        free(rec_attr_buf);
+        free(old_parent_attr);
+        free(new_parent_attr);
+        return SMKFS_ERR_INVAL;
+      }
+      depth++;
+    }
+  }
+
   if (journal_start_transaction(mnt) != SMKFS_OK) {
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_JOURNAL;
   }
 
   /* --- Remove old directory entry --- */
   if (record_read(mnt, old_parent, &old_parent_rec, old_parent_attr,
-                  sizeof(old_parent_attr)) != SMKFS_OK) {
+                  buf_size) != SMKFS_OK) {
     journal_abort(mnt);
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_IO;
   }
 
   if (record_find_attr(old_parent_attr, SMKFS_ATTRT_DATA,
                        (PVOID *)&old_btree_ptr, NULL) != SMKFS_OK) {
     journal_abort(mnt);
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_NOTFOUND;
   }
 
@@ -369,14 +474,19 @@ SMKFS_STATUS smkfs_rename(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID old_parent,
         btree_delete(mnt, *old_btree_ptr, old_name, &new_root);
     if (del_ret != SMKFS_OK) {
       journal_abort(mnt);
+      free(rec_attr_buf);
+      free(old_parent_attr);
+      free(new_parent_attr);
       return del_ret;
     }
   }
 
-  if (record_add_attr(old_parent_attr, sizeof(old_parent_attr),
-                      SMKFS_ATTRT_DATA, &new_root,
+  if (record_add_attr(old_parent_attr, buf_size, SMKFS_ATTRT_DATA, &new_root,
                       sizeof(new_root)) != SMKFS_OK) {
     journal_abort(mnt);
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_NOSPC;
   }
 
@@ -385,19 +495,28 @@ SMKFS_STATUS smkfs_rename(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID old_parent,
   if (record_write(mnt, old_parent, &old_parent_rec, old_parent_attr) !=
       SMKFS_OK) {
     journal_abort(mnt);
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_IO;
   }
 
   /* --- Insert new directory entry --- */
   if (record_read(mnt, new_parent, &new_parent_rec, new_parent_attr,
-                  sizeof(new_parent_attr)) != SMKFS_OK) {
+                  buf_size) != SMKFS_OK) {
     journal_abort(mnt);
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_IO;
   }
 
   if (record_find_attr(new_parent_attr, SMKFS_ATTRT_DATA,
                        (PVOID *)&new_btree_ptr, NULL) != SMKFS_OK) {
     journal_abort(mnt);
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_NOTFOUND;
   }
 
@@ -405,13 +524,18 @@ SMKFS_STATUS smkfs_rename(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID old_parent,
   if (btree_insert(mnt, *new_btree_ptr, new_name, record_id, &new_root) !=
       SMKFS_OK) {
     journal_abort(mnt);
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_NOSPC;
   }
 
-  if (record_add_attr(new_parent_attr, sizeof(new_parent_attr),
-                      SMKFS_ATTRT_DATA, &new_root,
+  if (record_add_attr(new_parent_attr, buf_size, SMKFS_ATTRT_DATA, &new_root,
                       sizeof(new_root)) != SMKFS_OK) {
     journal_abort(mnt);
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_NOSPC;
   }
 
@@ -420,26 +544,41 @@ SMKFS_STATUS smkfs_rename(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID old_parent,
   if (record_write(mnt, new_parent, &new_parent_rec, new_parent_attr) !=
       SMKFS_OK) {
     journal_abort(mnt);
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_IO;
   }
 
   /* --- Update PARENT attribute on the record itself --- */
-  if (record_add_attr(rec_attr_buf, sizeof(rec_attr_buf), SMKFS_ATTRT_PARENT,
-                      &new_parent, sizeof(new_parent)) != SMKFS_OK) {
+  if (record_add_attr(rec_attr_buf, buf_size, SMKFS_ATTRT_PARENT, &new_parent,
+                      sizeof(new_parent)) != SMKFS_OK) {
     journal_abort(mnt);
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_NOSPC;
   }
 
   rec.header.length = sizeof(_SMKFS_RECORD) + attr_buf_total_len(rec_attr_buf);
   if (record_write(mnt, record_id, &rec, rec_attr_buf) != SMKFS_OK) {
     journal_abort(mnt);
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_IO;
   }
 
   if (journal_commit(mnt) != SMKFS_OK) {
+    free(rec_attr_buf);
+    free(old_parent_attr);
+    free(new_parent_attr);
     return SMKFS_ERR_JOURNAL;
   }
 
+  free(rec_attr_buf);
+  free(old_parent_attr);
+  free(new_parent_attr);
   return SMKFS_OK;
 }
 
@@ -458,7 +597,12 @@ SMKFS_STATUS smkfs_readdir(_SMKFS_MOUNT *mnt, SMKFS_PATH path,
                            _SMKFS_DIRENT *entries, SIZE_T max_entries,
                            SIZE_T *out_count) {
   SMKFS_RECORD_ID dir_record;
-  UCHAR attr_buf[SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD)];
+  SIZE_T buf_size = SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD);
+  PUCHAR attr_buf = (PUCHAR)malloc(buf_size);
+  if (!attr_buf) {
+    free(attr_buf);
+    return SMKFS_ERR_NOMEM;
+  }
   _SMKFS_RECORD rec;
   SMKFS_BLOCK *btree_root;
   _SMKFS_READDIR_CTX ctx;
@@ -474,8 +618,7 @@ SMKFS_STATUS smkfs_readdir(_SMKFS_MOUNT *mnt, SMKFS_PATH path,
   if (path_lookup(mnt, path, &dir_record) != SMKFS_OK) {
     return SMKFS_ERR_NOTFOUND;
   }
-  if (record_read(mnt, dir_record, &rec, attr_buf, sizeof(attr_buf)) !=
-      SMKFS_OK) {
+  if (record_read(mnt, dir_record, &rec, attr_buf, buf_size) != SMKFS_OK) {
     return SMKFS_ERR_IO;
   }
 
