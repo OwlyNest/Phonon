@@ -36,10 +36,16 @@
 /* --- Functions ---*/
 
 SMKFS_STATUS smkfs_mount(UCHAR drive, _SMKFS_MOUNT *mnt) {
-  UCHAR block[SMKFS_BLOCK_SIZE];
+  PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
+  if (!block) {
+    free(block);
+    return SMKFS_ERR_NOMEM;
+  }
 
-  if (mnt->mounted)
+  if (mnt->mounted) {
+    free(block);
     return SMKFS_ERR_INVAL;
+  }
 
   crc32c_test_vectors();
 
@@ -53,6 +59,7 @@ SMKFS_STATUS smkfs_mount(UCHAR drive, _SMKFS_MOUNT *mnt) {
     printk("[SmKFS] Failed to read superblock\n");
     bitmap_shutdown(mnt);
     block_cache_shutdown(mnt);
+    free(block);
     return SMKFS_ERR_IO;
   }
 
@@ -62,6 +69,7 @@ SMKFS_STATUS smkfs_mount(UCHAR drive, _SMKFS_MOUNT *mnt) {
     printk("[SmKFS] Superblock header invalid\n");
     bitmap_shutdown(mnt);
     block_cache_shutdown(mnt);
+    free(block);
     return SMKFS_ERR_CORRUPT;
   }
 
@@ -70,11 +78,13 @@ SMKFS_STATUS smkfs_mount(UCHAR drive, _SMKFS_MOUNT *mnt) {
     printk("[SmKFS] Superblock checksum mismatch\n");
     bitmap_shutdown(mnt);
     block_cache_shutdown(mnt);
+    free(block);
     return SMKFS_ERR_CORRUPT;
   }
 
   SMKFS_STATUS ret = journal_replay(mnt);
   if (ret != SMKFS_OK) {
+    free(block);
     return ret;
   }
 
@@ -82,6 +92,7 @@ SMKFS_STATUS smkfs_mount(UCHAR drive, _SMKFS_MOUNT *mnt) {
     printk("[SMKFS] Failed to init region cache\n");
     bitmap_shutdown(mnt);
     block_cache_shutdown(mnt);
+    free(block);
     return SMKFS_ERR_NOMEM;
   }
 
@@ -109,6 +120,7 @@ SMKFS_STATUS smkfs_mount(UCHAR drive, _SMKFS_MOUNT *mnt) {
   }
 
   free(root_attr);
+  free(block);
   return SMKFS_OK;
 }
 
@@ -129,8 +141,13 @@ SMKFS_STATUS smkfs_unmount(_SMKFS_MOUNT *mnt) {
 
   /* checkpoint already wrote the superblock, but write the CLEAN flag */
   {
-    UCHAR block[SMKFS_BLOCK_SIZE];
-    memset(block, 0, sizeof(block));
+    PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
+    if (!block) {
+      free(block);
+      return SMKFS_ERR_NOMEM;
+    }
+
+    memset(block, 0, SMKFS_BLOCK_SIZE);
     memcpy(block, &mnt->sb, sizeof(mnt->sb));
     header_checksum_update(&((_SMKFS_SUPERBLOCK *)block)->header, block,
                            sizeof(_SMKFS_SUPERBLOCK));
@@ -139,6 +156,7 @@ SMKFS_STATUS smkfs_unmount(_SMKFS_MOUNT *mnt) {
       mnt->mounted = 0;
       bitmap_shutdown(mnt);
       block_cache_shutdown(mnt);
+      free(block);
       return SMKFS_ERR_IO;
     }
   }
@@ -170,10 +188,15 @@ SMKFS_STATUS smkfs_sync(_SMKFS_MOUNT *mnt) {
 
 SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
                         ULONGLONG sector_size) {
-  UCHAR block[SMKFS_BLOCK_SIZE];
+  PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
+  if (!block) {
+    free(block);
+    return SMKFS_ERR_NOMEM;
+  }
   _SMKFS_MOUNT *mnt = malloc(sizeof(_SMKFS_MOUNT));
   if (!mnt) {
     printk("[MKFS] Failed to allocate mount context\n");
+    free(block);
     return SMKFS_ERR_NOMEM;
   }
 
@@ -194,6 +217,7 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
   if (total_blocks < 16) {
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return SMKFS_ERR_INVAL;
   }
 
@@ -252,17 +276,19 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
   if (mrt_init(mnt, mrt_start, mrt_blocks) != SMKFS_OK) {
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return SMKFS_ERR_INVAL;
   }
 
   mnt->sb.mrt_free_count = mnt->sb.mrt_capacity - 1; /* slot 0 reserved */
 
   /* --- Zero journal region --- */
-  memset(block, 0, sizeof(block));
+  memset(block, 0, SMKFS_BLOCK_SIZE);
   for (uint64_t i = 0; i < journal_blocks; i++) {
     if (write_block(mnt, 1 + i, block) != 0) {
       block_cache_shutdown(mnt);
       free(mnt);
+      free(block);
       return SMKFS_ERR_IO;
     }
   }
@@ -270,11 +296,12 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
   /* Zero bitmap region; nothing is pre-marked, everything below
    * allocates through bitmap_alloc like normal operation would
    */
-  memset(block, 0, sizeof(block));
+  memset(block, 0, SMKFS_BLOCK_SIZE);
   for (uint64_t i = 0; i < bitmap_blocks; i++) {
     if (write_block(mnt, mnt->sb.bitmap_start + i, block) != 0) {
       block_cache_shutdown(mnt);
       free(mnt);
+      free(block);
       return SMKFS_ERR_IO;
     }
   }
@@ -283,6 +310,7 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
   if (mrt_format(mnt, mrt_start, mrt_blocks) != SMKFS_OK) {
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return SMKFS_ERR_IO;
   }
 
@@ -290,6 +318,7 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
   if (journal_start_transaction(mnt) != SMKFS_OK) {
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return SMKFS_ERR_JOURNAL;
   }
 
@@ -301,10 +330,11 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
     journal_abort(mnt);
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return SMKFS_ERR_NOSPC;
   }
 
-  memset(block, 0, sizeof(block));
+  memset(block, 0, SMKFS_BLOCK_SIZE);
   node = (_SMKFS_BTREE_NODE *)block;
   header_init(&node->header, SMKFS_ST_BTREE_NODE, sizeof(_SMKFS_BTREE_NODE),
               SMKFS_BTN_LEAF | SMKFS_BTN_ROOT);
@@ -319,6 +349,7 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
     journal_abort(mnt);
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return SMKFS_ERR_IO;
   }
 
@@ -330,26 +361,40 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
     journal_abort(mnt);
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return SMKFS_ERR_NOSPC;
   }
 
   {
-    UCHAR attr_buf[SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD)];
-    _SMKFS_RECORD root_rec;
-
-    if (record_read(mnt, root_id, &root_rec, attr_buf, sizeof(attr_buf)) !=
-        SMKFS_OK) {
+    SIZE_T buf_size = SMKFS_BLOCK_SIZE - sizeof(_SMKFS_RECORD);
+    PUCHAR attr_buf = (PUCHAR)malloc(buf_size);
+    if (!attr_buf) {
+      free(attr_buf);
       journal_abort(mnt);
       block_cache_shutdown(mnt);
       free(mnt);
+      free(block);
+      return SMKFS_ERR_NOMEM;
+    }
+
+    _SMKFS_RECORD root_rec;
+
+    if (record_read(mnt, root_id, &root_rec, attr_buf, buf_size) != SMKFS_OK) {
+      free(attr_buf);
+      journal_abort(mnt);
+      block_cache_shutdown(mnt);
+      free(mnt);
+      free(block);
       return SMKFS_ERR_IO;
     }
 
-    if (record_add_attr(attr_buf, sizeof(attr_buf), SMKFS_ATTRT_DATA,
-                        &btree_root, sizeof(btree_root)) != SMKFS_OK) {
+    if (record_add_attr(attr_buf, buf_size, SMKFS_ATTRT_DATA, &btree_root,
+                        sizeof(btree_root)) != SMKFS_OK) {
+      free(attr_buf);
       journal_abort(mnt);
       block_cache_shutdown(mnt);
       free(mnt);
+      free(block);
       return SMKFS_ERR_NOSPC;
     }
 
@@ -358,9 +403,11 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
         sizeof(_SMKFS_RECORD) + attr_buf_total_len(attr_buf);
 
     if (record_write(mnt, root_id, &root_rec, attr_buf) != SMKFS_OK) {
+      free(attr_buf);
       journal_abort(mnt);
       block_cache_shutdown(mnt);
       free(mnt);
+      free(block);
       return SMKFS_ERR_IO;
     }
   }
@@ -371,17 +418,19 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
   if (journal_commit(mnt) != SMKFS_OK) {
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return SMKFS_ERR_JOURNAL;
   }
 
   /* Now that every field reflects reality, persist the superblock */
-  memset(block, 0, sizeof(block));
+  memset(block, 0, SMKFS_BLOCK_SIZE);
   memcpy(block, &mnt->sb, sizeof(mnt->sb));
   header_checksum_update(&((_SMKFS_SUPERBLOCK *)block)->header, block,
                          sizeof(_SMKFS_SUPERBLOCK));
   if (write_block(mnt, 0, block) != 0) {
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return SMKFS_ERR_IO;
   }
 
@@ -392,16 +441,22 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
   smkfs_fsck(mnt->drive_num);
   block_cache_shutdown(mnt);
   free(mnt);
+  free(block);
   return SMKFS_OK;
 }
 
 SMKFS_STATUS smkfs_fsck(UCHAR drive) {
-  UCHAR block[SMKFS_BLOCK_SIZE];
+  PUCHAR block = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
+  if (!block) {
+    free(block);
+    return SMKFS_ERR_NOMEM;
+  }
   _SMKFS_SUPERBLOCK check_sb;
   LONG errors = 0;
   _SMKFS_MOUNT *mnt = malloc(sizeof(_SMKFS_MOUNT));
   if (!mnt) {
     printk("[SmKFS] Failed to allocate mount context\n");
+    free(block);
     return SMKFS_ERR_NOMEM;
     ;
   }
@@ -415,6 +470,7 @@ SMKFS_STATUS smkfs_fsck(UCHAR drive) {
     printk("[SmKFS] fsck: Cannot read superblock\n");
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return SMKFS_ERR_IO;
   }
 
@@ -433,6 +489,7 @@ SMKFS_STATUS smkfs_fsck(UCHAR drive) {
     printk("[SmKFS] fsck: Superblock header invalid\n");
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return SMKFS_ERR_CORRUPT;
   }
 
@@ -447,6 +504,7 @@ SMKFS_STATUS smkfs_fsck(UCHAR drive) {
     printk("[SmKFS] fsck: Invalid layout\n");
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return SMKFS_ERR_CORRUPT;
   }
 
@@ -462,6 +520,7 @@ SMKFS_STATUS smkfs_fsck(UCHAR drive) {
   if (mrt_ret != SMKFS_OK) {
     block_cache_shutdown(mnt);
     free(mnt);
+    free(block);
     return mrt_ret;
   }
 
@@ -472,7 +531,7 @@ SMKFS_STATUS smkfs_fsck(UCHAR drive) {
   }
 
   if (errors > 0) {
-    memset(block, 0, sizeof(block));
+    memset(block, 0, SMKFS_BLOCK_SIZE);
     memcpy(block, &check_sb, sizeof(check_sb));
     header_checksum_update(&((_SMKFS_SUPERBLOCK *)block)->header, block,
                            sizeof(_SMKFS_SUPERBLOCK));
@@ -484,9 +543,11 @@ SMKFS_STATUS smkfs_fsck(UCHAR drive) {
   printk("[SmKFS] fsck: Clean\n");
   block_cache_shutdown(mnt);
   free(mnt);
+  free(block);
   return SMKFS_OK;
 cleanup:
   block_cache_shutdown(mnt);
   free(mnt);
+  free(block);
   return (errors > 0) ? SMKFS_ERR_CORRUPT : SMKFS_OK;
 }

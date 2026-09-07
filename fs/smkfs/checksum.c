@@ -154,7 +154,7 @@ SMKFS_STATUS header_checksum_verify(const _SMKFS_HEADER *h, PCVOID data,
     return SMKFS_ERR_NOMEM;
   }
 
-  if (len > sizeof(tmp_buf)) {
+  if (len > SMKFS_BLOCK_SIZE) {
     free(tmp_buf);
     return SMKFS_ERR_CORRUPT;
   }
