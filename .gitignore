@@ -100,4 +100,4 @@ gmon.out
 *.til
 *.i64
 
-.fd
+*.fd

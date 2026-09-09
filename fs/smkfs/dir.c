@@ -96,7 +96,7 @@ SMKFS_STATUS smkfs_create_record(_SMKFS_MOUNT *mnt,
   if (!parent_attr || !new_attr) {
     free(parent_attr);
     free(new_attr);
-    journal_commit(mnt);
+    journal_abort(mnt);
     return SMKFS_ERR_NOMEM;
   }
 

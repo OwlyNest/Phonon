@@ -88,7 +88,7 @@ SMKFS_STATUS bitmap_init_regions(_SMKFS_MOUNT *mnt) {
   }
 
   for (ULONGLONG bb = 0; bb < mnt->sb.bitmap_length; bb++) {
-    if (read_block(mnt, mnt->sb.bitmap_start + bb, buf) != 0) {
+    if (read_block(mnt, mnt->sb.bitmap_start + bb, buf) != SMKFS_OK) {
       free(buf);
       free(mnt->regions);
       mnt->regions = NULL;
@@ -302,7 +302,7 @@ static SMKFS_BLOCK bitmap_alloc_in_region(_SMKFS_MOUNT *mnt, ULONG region,
   buf = (PUCHAR)malloc(SMKFS_BLOCK_SIZE);
   if (!buf)
     return 0;
-  if (read_block(mnt, bitmap_block, buf) != 0) {
+  if (read_block(mnt, bitmap_block, buf) != SMKFS_OK) {
     free(buf);
     return 0;
   }
@@ -336,7 +336,7 @@ found:
       LONG bit_offset = (LONG)(bit % 8);
       buf[block_offset + byte_idx] |= (1 << bit_offset);
     }
-    if (write_block(mnt, bitmap_block, buf) != 0) {
+    if (write_block(mnt, bitmap_block, buf) != SMKFS_OK) {
       result = 0;
     } else {
       mnt->sb.free_blocks -= count;
@@ -386,7 +386,7 @@ static SMKFS_BLOCK bitmap_alloc_range_linear(_SMKFS_MOUNT *mnt, ULONG count) {
 
   for (bb = 0; bb < mnt->sb.bitmap_length; bb++) {
 
-    if (read_block(mnt, mnt->sb.bitmap_start + bb, buf) != 0) {
+    if (read_block(mnt, mnt->sb.bitmap_start + bb, buf) != SMKFS_OK) {
       free(buf);
       free(j_buf);
       return 0;
@@ -414,13 +414,15 @@ static SMKFS_BLOCK bitmap_alloc_range_linear(_SMKFS_MOUNT *mnt, ULONG count) {
               ULONGLONG j_bb = idx / (SMKFS_BLOCK_SIZE * 8);
               ULONGLONG j_bo = (idx % (SMKFS_BLOCK_SIZE * 8)) / 8;
               ULONGLONG j_bi = idx % 8;
-              if (read_block(mnt, mnt->sb.bitmap_start + j_bb, j_buf) != 0) {
+              if (read_block(mnt, mnt->sb.bitmap_start + j_bb, j_buf) !=
+                  SMKFS_OK) {
                 free(buf);
                 free(j_buf);
                 return 0;
               }
               j_buf[j_bo] |= (1 << j_bi);
-              if (write_block(mnt, mnt->sb.bitmap_start + j_bb, j_buf) != 0) {
+              if (write_block(mnt, mnt->sb.bitmap_start + j_bb, j_buf) !=
+                  SMKFS_OK) {
                 free(buf);
                 free(j_buf);
                 return 0;

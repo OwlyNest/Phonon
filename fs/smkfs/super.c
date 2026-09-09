@@ -282,7 +282,7 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
   /* --- Zero journal region --- */
   memset(block, 0, SMKFS_BLOCK_SIZE);
   for (uint64_t i = 0; i < journal_blocks; i++) {
-    if (write_block(mnt, 1 + i, block) != 0) {
+    if (write_block(mnt, 1 + i, block) != SMKFS_OK) {
       block_cache_shutdown(mnt);
       free(mnt);
       free(block);
@@ -295,7 +295,7 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
    */
   memset(block, 0, SMKFS_BLOCK_SIZE);
   for (uint64_t i = 0; i < bitmap_blocks; i++) {
-    if (write_block(mnt, mnt->sb.bitmap_start + i, block) != 0) {
+    if (write_block(mnt, mnt->sb.bitmap_start + i, block) != SMKFS_OK) {
       block_cache_shutdown(mnt);
       free(mnt);
       free(block);
@@ -424,7 +424,7 @@ SMKFS_STATUS smkfs_mkfs(UCHAR drive, ULONGLONG total_blocks,
   memcpy(block, &mnt->sb, sizeof(mnt->sb));
   header_checksum_update(&((_SMKFS_SUPERBLOCK *)block)->header, block,
                          sizeof(_SMKFS_SUPERBLOCK));
-  if (write_block(mnt, 0, block) != 0) {
+  if (write_block(mnt, 0, block) != SMKFS_OK) {
     block_cache_shutdown(mnt);
     free(mnt);
     free(block);

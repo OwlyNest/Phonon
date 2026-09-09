@@ -136,7 +136,7 @@ SMKFS_STATUS smkfs_dump_record(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id) {
     return mrt_ret;
   }
 
-  if (read_block(mnt, phys_block, block) != 0) {
+  if (read_block(mnt, phys_block, block) != SMKFS_OK) {
     printk("[SmKFS] Cannot read record %llu, (phys: %llu)\n", record_id,
            phys_block);
     free(block);
@@ -144,7 +144,7 @@ SMKFS_STATUS smkfs_dump_record(_SMKFS_MOUNT *mnt, SMKFS_RECORD_ID record_id) {
   }
 
   rec = (_SMKFS_RECORD *)block;
-  if (header_validate(&rec->header, SMKFS_ST_RECORD) != 0) {
+  if (header_validate(&rec->header, SMKFS_ST_RECORD) != SMKFS_OK) {
     printk("[SmKFS] Record %llu (phys: %llu): invalid header\n", record_id,
            phys_block);
     free(block);
@@ -200,11 +200,11 @@ SMKFS_STATUS smkfs_dump_journal(_SMKFS_MOUNT *mnt) {
 
   printk("\n=== Journal ===\n");
   for (ULONGLONG i = 0; i < mnt->sb.journal_length; i++) {
-    if (read_block(mnt, mnt->sb.journal_start + i, block) != 0)
+    if (read_block(mnt, mnt->sb.journal_start + i, block) != SMKFS_OK)
       continue;
 
     ent = (_SMKFS_JOURNAL_ENTRY *)block;
-    if (header_validate(&ent->header, SMKFS_ST_JOURNAL_ENT) != 0) {
+    if (header_validate(&ent->header, SMKFS_ST_JOURNAL_ENT) != SMKFS_OK) {
       continue;
     }
 
